@@ -29,8 +29,8 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 # --- KONFIGURACJA ---
-app.secret_key = "dinguz_super_tajny_klucz_123"
-SYNC_TOKEN = "TAJNY_KLUCZ_SYNCHRONIZACJI_DINGUZ"
+app.secret_key = "REDACTED
+SYNC_TOKEN = "REDACTED
 SUBDOMAINS_FILE = "subdomains.json"
 SHARES_FILE = "shares.json"
 VIDEO_SHARES_FILE = "video_shares.json"
@@ -87,17 +87,17 @@ def add_security_headers(response):
     return response
 
 # Discord OAuth2 – dane aplikacji
-DISCORD_CLIENT_ID = "REDACTED
+DISCORD_CLIENT_ID = REDACTED
 DISCORD_CLIENT_SECRET = "REDACTED
-DISCORD_REDIRECT_URI = "https://dinguzhosting.online/callback"
+DISCORD_REDIRECT_URI = "REDACTED
 
 PTERO_URL = "REDACTED
 PTERO_APP_KEY = "REDACTED
 PTERO_CLIENT_KEY = "REDACTED
 
-CF_API_TOKEN = REDACTED
-CF_ZONE_ID = REDACTED
-NODE_PUBLIC_IP = "79.76.118.163"
+CF_API_TOKEN = "REDACTED
+CF_ZONE_ID = "REDACTED
+NODE_PUBLIC_IP = "REDACTED
 
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -214,6 +214,39 @@ def _get_drop_account_used(email, uid):
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+def set_pterodactyl_password(user_id, password):
+    headers = {
+        "Authorization": f"Bearer {PTERO_APP_KEY}",
+        "Accept": "Application/vnd.pterodactyl.v1+json",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "password": password
+    }
+
+    try:
+        response = requests.patch(
+            f"{PTERO_URL}/api/application/users/{user_id}",
+            headers=headers,
+            json=payload,
+            timeout=10
+        )
+    except requests.RequestException as e:
+        print(f"[PTERO] Błąd zmiany hasła: {e}")
+        return False
+
+    if response.status_code != 200:
+        print(
+            f"[PTERO] Nie udało się zmienić hasła.\n"
+            f"HTTP: {response.status_code}\n"
+            f"Response: {response.text}"
+        )
+        return False
+
+    print(f"[PTERO] Hasło użytkownika {user_id} zostało zmienione.")
+    return True
+
 # ==========================================
 #   POMOCNICZE FUNKCJE
 # ==========================================
@@ -239,15 +272,6 @@ def get_discord_user():
         return None
 
 def ensure_pterodactyl_user(discord_user):
-    """
-    Sprawdza, czy użytkownik Discord istnieje w Pterodactylu.
-    Jeśli nie istnieje, automatycznie go tworzy.
-
-    Zwraca:
-        (True, user_attributes)  -> użytkownik istnieje/został utworzony
-        (False, None)             -> wystąpił błąd
-    """
-
     if not discord_user:
         print("[PTERO] Brak danych Discord użytkownika.")
         return False, None
@@ -264,67 +288,58 @@ def ensure_pterodactyl_user(discord_user):
         "Content-Type": "application/json"
     }
 
-    # ==========================================
-    # 1. SPRAWDZENIE CZY UŻYTKOWNIK JUŻ ISTNIEJE
-    # ==========================================
-
+    # Sprawdzenie, czy użytkownik już istnieje
     try:
-        check = requests.get(
+        response = requests.get(
             f"{PTERO_URL}/api/application/users",
             headers=headers,
-            params={
-                "filter[email]": email
-            },
+            params={"filter[email]": email},
             timeout=10
         )
     except requests.RequestException as e:
-        print(f"[PTERO] Błąd połączenia przy sprawdzaniu użytkownika: {e}")
+        print(f"[PTERO] Błąd połączenia: {e}")
         return False, None
 
-    if check.status_code != 200:
+    if response.status_code != 200:
         print(
-            f"[PTERO] Nie udało się sprawdzić użytkownika. "
-            f"HTTP {check.status_code}: {check.text}"
+            f"[PTERO] Błąd sprawdzania użytkownika: "
+            f"HTTP {response.status_code}: {response.text}"
         )
         return False, None
 
     try:
-        existing = check.json().get("data", [])
+        users = response.json().get("data", [])
     except Exception:
-        print("[PTERO] Nieprawidłowa odpowiedź JSON podczas sprawdzania użytkownika.")
+        print("[PTERO] Nieprawidłowa odpowiedź JSON.")
         return False, None
 
-    if existing:
-        user_attributes = existing[0].get("attributes", {})
+    # Użytkownik już istnieje
+	if users:
+    	user = users[0].get("attributes", {})
 
-        print(
-            f"[PTERO] Użytkownik już istnieje: "
-            f"{user_attributes.get('username')} "
-            f"({email})"
-        )
+    print(
+        f"[PTERO] Użytkownik już istnieje: "
+        f"{user.get('username')} ({email})"
+    )
 
-        return True, user_attributes
+    return True, user, True
 
-    # ==========================================
-    # 2. GENEROWANIE USERNAME
-    # ==========================================
-
+    # Generowanie username
     discord_username = (
         discord_user.get("username")
         or discord_user.get("global_name")
         or "user"
     )
 
-    # Pterodactyl username:
-    # tylko litery, cyfry, _, -
-    username = re.sub(r"[^a-zA-Z0-9_-]", "", discord_username)
+    username = re.sub(
+        r"[^a-zA-Z0-9_-]",
+        "",
+        discord_username
+    )
 
     if not username:
         username = "user"
 
-    # Pterodactyl wymaga unikalnego username.
-    # Discord username sam w sobie może się powtarzać,
-    # więc dokładamy fragment Discord ID.
     discord_id = str(discord_user.get("id") or "")
 
     if discord_id:
@@ -332,9 +347,8 @@ def ensure_pterodactyl_user(discord_user):
 
     username = username[:32]
 
-    # ==========================================
-    # 3. DANE NOWEGO UŻYTKOWNIKA
-    # ==========================================
+    # Tymczasowe losowe hasło
+    temporary_password = secrets.token_urlsafe(32)
 
     payload = {
         "email": email,
@@ -345,45 +359,42 @@ def ensure_pterodactyl_user(discord_user):
             or "Dinguz"
         )[:191],
         "last_name": "User",
-        "password": secrets.token_urlsafe(32),
+        "password": temporary_password,
         "root_admin": False
     }
 
-    # ==========================================
-    # 4. UTWORZENIE KONTA W PTERODACTYLU
-    # ==========================================
-
+    # Utworzenie użytkownika
     try:
-        create = requests.post(
+        response = requests.post(
             f"{PTERO_URL}/api/application/users",
             headers=headers,
             json=payload,
             timeout=10
         )
     except requests.RequestException as e:
-        print(f"[PTERO] Błąd połączenia przy tworzeniu użytkownika: {e}")
+        print(f"[PTERO] Błąd tworzenia użytkownika: {e}")
         return False, None
 
-    if create.status_code not in (200, 201):
+    if response.status_code not in (200, 201):
         print(
-            f"[PTERO] NIE UDAŁO SIĘ UTWORZYĆ UŻYTKOWNIKA.\n"
-            f"HTTP: {create.status_code}\n"
-            f"Response: {create.text}"
+            f"[PTERO] NIE UDAŁO SIĘ UTWORZYĆ UŻYTKOWNIKA\n"
+            f"HTTP: {response.status_code}\n"
+            f"Response: {response.text}"
         )
         return False, None
 
     try:
-        created = create.json().get("attributes", {})
+        user = response.json().get("attributes", {})
     except Exception:
-        print("[PTERO] Pterodactyl utworzył konto, ale odpowiedź nie jest poprawnym JSON-em.")
+        print("[PTERO] Nieprawidłowa odpowiedź po tworzeniu użytkownika.")
         return False, None
 
     print(
-        f"[PTERO] UTWORZONO NOWEGO UŻYTKOWNIKA: "
-        f"{created.get('username')} ({email})"
+        f"[PTERO] UTWORZONO UŻYTKOWNIKA: "
+        f"{user.get('username')} ({email})"
     )
 
-    return True, created
+    return True, user
 
 @app.context_processor
 def inject_discord_user():
@@ -495,6 +506,106 @@ def index():
     # not logged — show login with next preserved
     safe_next = next_url if next_url and _is_safe_next(next_url) else url_for('dashboard')
     return render_template("login.html", next=safe_next)
+
+@app.route("/set-password", methods=["GET", "POST"])
+def set_password():
+    if "discord_user" not in session:
+        return redirect(url_for("index"))
+
+    if not session.get("must_set_password"):
+        return redirect(url_for("dashboard"))
+
+    discord_user = session["discord_user"]
+    email = (discord_user.get("email") or "").strip().lower()
+
+    if not email:
+        session.clear()
+        return redirect(url_for("index"))
+
+    if request.method == "GET":
+        return render_template("set_password.html")
+
+    password = request.form.get("password", "")
+    password_repeat = request.form.get("password_repeat", "")
+
+    if len(password) < 8:
+        return render_template(
+            "set_password.html",
+            error="Hasło musi mieć co najmniej 8 znaków."
+        )
+
+    if password != password_repeat:
+        return render_template(
+            "set_password.html",
+            error="Hasła nie są takie same."
+        )
+
+    headers = {
+        "Authorization": f"Bearer {PTERO_APP_KEY}",
+        "Accept": "Application/vnd.pterodactyl.v1+json",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.get(
+            f"{PTERO_URL}/api/application/users",
+            headers=headers,
+            params={
+                "filter[email]": email
+            },
+            timeout=10
+        )
+    except requests.RequestException as e:
+        print(f"[PTERO] Błąd wyszukiwania użytkownika: {e}")
+
+        return render_template(
+            "set_password.html",
+            error="Nie udało się połączyć z panelem. Spróbuj ponownie."
+        )
+
+    if response.status_code != 200:
+        print(
+            f"[PTERO] Błąd wyszukiwania użytkownika: "
+            f"HTTP {response.status_code}: {response.text}"
+        )
+
+        return render_template(
+            "set_password.html",
+            error="Nie udało się znaleźć Twojego konta."
+        )
+
+    try:
+        users = response.json().get("data", [])
+    except Exception:
+        return render_template(
+            "set_password.html",
+            error="Panel zwrócił nieprawidłową odpowiedź."
+        )
+
+    if not users:
+        return render_template(
+            "set_password.html",
+            error="Twoje konto Pterodactyl nie zostało znalezione."
+        )
+
+    ptero_user = users[0].get("attributes", {})
+    user_id = ptero_user.get("id")
+
+    if not user_id:
+        return render_template(
+            "set_password.html",
+            error="Nie udało się pobrać ID użytkownika."
+        )
+
+    if not set_pterodactyl_password(user_id, password):
+        return render_template(
+            "set_password.html",
+            error="Nie udało się ustawić hasła. Spróbuj ponownie."
+        )
+
+    session["must_set_password"] = False
+
+    return redirect(url_for("dashboard"))
 
 @app.route("/countdown")
 def countdown():
@@ -624,61 +735,87 @@ def discord_login():
 
 @app.route("/callback")
 def callback():
-    state = request.args.get('state')
-    if not state or state != session.get('oauth_state'):
+    state = request.args.get("state")
+    session["must_set_password"] = True
+	return redirect(url_for("set_password"))
+
+    if not state or state != session.get("oauth_state"):
         session.clear()
-        return redirect(url_for('index'))
-    code = request.args.get('code')
+        return redirect(url_for("index"))
+
+    code = request.args.get("code")
+
     if not code:
         session.clear()
-        return redirect(url_for('index'))
-    token_url = 'https://discord.com/api/oauth2/token'
+        return redirect(url_for("index"))
+
+    token_url = "https://discord.com/api/oauth2/token"
+
     data = {
-        'client_id': DISCORD_CLIENT_ID,
-        'client_secret': DISCORD_CLIENT_SECRET,
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': DISCORD_REDIRECT_URI
+        "client_id": DISCORD_CLIENT_ID,
+        "client_secret": DISCORD_CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": DISCORD_REDIRECT_URI
     }
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    resp = requests.post(token_url, data=data, headers=headers)
+
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    resp = requests.post(
+        token_url,
+        data=data,
+        headers=headers
+    )
+
     if resp.status_code != 200:
         session.clear()
-        return redirect(url_for('index'))
+        return redirect(url_for("index"))
+
     token_data = resp.json()
-    session['discord_token'] = token_data
-    session.pop('oauth_state', None)
-    user_headers = {'Authorization': f"{token_data['token_type']} {token_data['access_token']}"}
-    user_resp = requests.get('https://discord.com/api/users/@me', headers=user_headers)
-	if user_resp.status_code == 200:
-    	discord_user = user_resp.json()
 
-	    session['discord_user'] = discord_user
-	    session.permanent = True
+    session["discord_token"] = token_data
+    session.pop("oauth_state", None)
 
-	    # ==========================================
-	    # AUTOMATYCZNE UTWORZENIE KONTA PTERODACTYL
-	    # ==========================================
-
-	    ptero_ok, ptero_user = ensure_pterodactyl_user(discord_user)
-
-    if not ptero_ok:
-        print(
-            f"[PTERO] Nie udało się utworzyć/synchronizować "
-            f"konta dla {discord_user.get('email')}"
+    user_headers = {
+        "Authorization": (
+            f"{token_data['token_type']} "
+            f"{token_data['access_token']}"
         )
+    }
 
-    else:
-        print(
-            f"[PTERO] Konto gotowe: "
-            f"{ptero_user.get('username')} "
-            f"(ID: {ptero_user.get('id')})"
-        )
+    user_resp = requests.get(
+        "https://discord.com/api/users/@me",
+        headers=user_headers
+    )
 
-	else:
-    	session.pop('discord_token', None)
-    	session.clear()
-    	return redirect(url_for('index'))
+    if user_resp.status_code == 200:
+        discord_user = user_resp.json()
+
+        session["discord_user"] = discord_user
+        session.permanent = True
+
+        # Automatyczne utworzenie/synchronizacja użytkownika Pterodactyl
+ptero_ok, ptero_user, ptero_created = ensure_pterodactyl_user(
+    discord_user
+)
+
+if not ptero_ok:
+    print(
+        f"[PTERO] Nie udało się utworzyć/synchronizować "
+        f"konta dla {discord_user.get('email')}"
+    )
+else:
+    print(
+        f"[PTERO] Konto gotowe: "
+        f"{ptero_user.get('username')} "
+        f"(ID: {ptero_user.get('id')})"
+    )
+
+    if ptero_created:
+        session["must_set_password"] = True
+        return redirect(url_for("set_password"))
 
 @app.route("/logout")
 def logout():
